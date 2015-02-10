@@ -90,10 +90,16 @@ function runOneTest(gl, info) {
 
   wtu.addShaderSource(consoleDiv, vLabel, vSource);
 
+  var errorLog = "";
+  var errorCallback = function(msg) {
+    errorLog = msg;
+  };
+
   // Reuse identical shaders so we test shared shader.
   var vShader = vShaderDB[vSource];
   if (!vShader) {
-    vShader = wtu.loadShader(gl, vSource, gl.VERTEX_SHADER);
+    errorLog = "";
+    vShader = wtu.loadShader(gl, vSource, gl.VERTEX_SHADER, errorCallback);
     if (info.vShaderTest) {
       if (!info.vShaderTest(vShader)) {
         testFailed("[vertex shader test] " + passMsg);
@@ -104,7 +110,7 @@ function runOneTest(gl, info) {
     // compileShader, not failure.
     if (!info.ignoreResults && info.vShaderSuccess && !vShader) {
       testFailed("[unexpected vertex shader compile status] (expected: " +
-                 info.vShaderSuccess + ") " + passMsg);
+                 info.vShaderSuccess + ") " + passMsg + "\nerror log:\n" + errorLog);
     }
     // Save the shaders so we test shared shader.
     if (vShader) {
@@ -126,7 +132,8 @@ function runOneTest(gl, info) {
   // Reuse identical shaders so we test shared shader.
   var fShader = fShaderDB[fSource];
   if (!fShader) {
-    fShader = wtu.loadShader(gl, fSource, gl.FRAGMENT_SHADER);
+    errorLog = "";
+    fShader = wtu.loadShader(gl, fSource, gl.FRAGMENT_SHADER, errorCallback);
     if (info.fShaderTest) {
       if (!info.fShaderTest(fShader)) {
         testFailed("[fragment shader test] " + passMsg);
@@ -138,7 +145,7 @@ function runOneTest(gl, info) {
     // compileShader, not failure.
     if (!info.ignoreResults && info.fShaderSuccess && !fShader) {
       testFailed("[unexpected fragment shader compile status] (expected: " +
-                info.fShaderSuccess + ") " + passMsg);
+                info.fShaderSuccess + ") " + passMsg + "\nerror log:\n" + errorLog);
       return;
     }
 
@@ -214,16 +221,20 @@ function runOneTest(gl, info) {
   wtu.checkCanvas(gl, [0, 255, 0, 255], "should be green", 0);
 }
 
-function runTests(shaderInfos) {
+function runTests(shaderInfos, opt_gl) {
   var wtu = WebGLTestUtils;
-  var canvas = document.createElement('canvas');
-  canvas.width = 32;
-  canvas.height = 32;
-  var gl = wtu.create3DContext(canvas);
-  if (!gl) {
-    testFailed("context does not exist");
-    finishTest();
-    return;
+  if (!opt_gl) {
+    var canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    var gl = wtu.create3DContext(canvas);
+    if (!gl) {
+      testFailed("context does not exist");
+      finishTest();
+      return;
+    }
+  } else {
+    gl = opt_gl;
   }
 
   var testIndex = 0;
