@@ -273,28 +273,80 @@ function runInternalFormatQueryTest()
     testPassed("Internal format query succeeded");
 }
 
-function runCopyTexImageTest(enabled)
+const copyTestFullColor = [0.125, 0.25, 0.5, 0.75];
+const copyTestSubColor = [0.875, 0.625, 0.375, 0.25];
+
+function expectedSampledCopyColor(destFormat, src)
+{
+    const toByte = v => Math.round(Math.min(Math.max(v, 0.0), 1.0) * 255.0);
+    const r = toByte(src[0]);
+    const g = toByte(src[1]);
+    const b = toByte(src[2]);
+    const a = toByte(src[3]);
+    switch (destFormat) {
+        case gl.R8:
+        case gl.R16F:
+        case gl.R32F:
+            return [r, 0, 0, 255];
+        case gl.RG8:
+        case gl.RG16F:
+        case gl.RG32F:
+            return [r, g, 0, 255];
+        case gl.RGB:
+        case gl.RGB8:
+        case gl.SRGB8:
+        case gl.RGB16F:
+        case gl.RGB32F:
+        case gl.R11F_G11F_B10F:
+            return [r, g, b, 255];
+        case gl.RGBA:
+        case gl.RGBA8:
+        case gl.SRGB8_ALPHA8:
+        case gl.RGBA16F:
+        case gl.RGBA32F:
+            return [r, g, b, a];
+        case gl.LUMINANCE:
+            return [r, r, r, 255];
+        case gl.ALPHA:
+            return [0, 0, 0, a];
+        case gl.LUMINANCE_ALPHA:
+            return [r, r, r, a];
+        default:
+            testFailed("Unexpected destFormat: " + wtu.glEnumToString(gl, destFormat));
+            return [0, 0, 0, 0];
+    }
+}
+
+function runCopyTexImageTest(enabled, texType)
 {
     var width = 16;
     var height = 16;
     var level = 0;
+    if (texType === undefined) {
+        texType = wtu.isWebGL2(gl) ? gl.HALF_FLOAT : 0x8D61 /* HALF_FLOAT_OES */;
+    }
+    const isHalfFloat = (texType != gl.FLOAT);
+    const rgbaFmt = isHalfFloat ? "RGBA16F" : "RGBA32F";
+    const rgbFmt = isHalfFloat ? "RGB16F" : "RGB32F";
+    const rgFmt = isHalfFloat ? "RG16F" : "RG32F";
+    const rFmt = isHalfFloat ? "R16F" : "R32F";
     var cases = [
-        { internalformat: "RGBA16F", format: "RGBA", destFormat: "R16F", valid: true, renderable: true, },
-        { internalformat: "RGBA16F", format: "RGBA", destFormat: "RG16F", valid: true, renderable: true, },
-        { internalformat: "RGBA16F", format: "RGBA", destFormat: "RGB16F", valid: true, renderable: true, },
-        { internalformat: "RGBA16F", format: "RGBA", destFormat: "RGBA16F", valid: true, renderable: true, },
-        { internalformat: "RGB16F", format: "RGB", destFormat: "R16F", valid: true, renderable: false, },
-        { internalformat: "RGB16F", format: "RGB", destFormat: "RG16F", valid: true, renderable: false, },
-        { internalformat: "RGB16F", format: "RGB", destFormat: "RGB16F", valid: true, renderable: false, },
-        { internalformat: "RGB16F", format: "RGB", destFormat: "RGBA16F", valid: false, renderable: false, },
-        { internalformat: "RG16F", format: "RG", destFormat: "R16F", valid: true, renderable: true, },
-        { internalformat: "RG16F", format: "RG", destFormat: "RG16F", valid: true, renderable: true, },
-        { internalformat: "RG16F", format: "RG", destFormat: "RGB16F", valid: false, renderable: true, },
-        { internalformat: "RG16F", format: "RG", destFormat: "RGBA16F", valid: false, renderable: true, },
-        { internalformat: "R16F", format: "RED", destFormat: "R16F", valid: true, renderable: true, },
-        { internalformat: "R16F", format: "RED", destFormat: "RG16F", valid: false, renderable: true, },
-        { internalformat: "R16F", format: "RED", destFormat: "RGB16F", valid: false, renderable: true, },
-        { internalformat: "R16F", format: "RED", destFormat: "RGBA16F", valid: false, renderable: true, },
+        { internalformat: rgbaFmt, format: "RGBA", destFormat: rFmt, valid: true, renderable: true, },
+        { internalformat: rgbaFmt, format: "RGBA", destFormat: rgFmt, valid: true, renderable: true, },
+        { internalformat: rgbaFmt, format: "RGBA", destFormat: rgbFmt, valid: true, renderable: true, },
+        { internalformat: rgbaFmt, format: "RGBA", destFormat: rgbaFmt, valid: true, renderable: true, },
+        { internalformat: rgbFmt, format: "RGB", destFormat: rFmt, valid: true, renderable: false, },
+        { internalformat: rgbFmt, format: "RGB", destFormat: rgFmt, valid: true, renderable: false, },
+        { internalformat: rgbFmt, format: "RGB", destFormat: rgbFmt, valid: true, renderable: false, },
+        { internalformat: rgbFmt, format: "RGB", destFormat: rgbaFmt, valid: false, renderable: false, },
+        { internalformat: rgFmt, format: "RG", destFormat: rFmt, valid: true, renderable: true, },
+        { internalformat: rgFmt, format: "RG", destFormat: rgFmt, valid: true, renderable: true, },
+        { internalformat: rgFmt, format: "RG", destFormat: rgbFmt, valid: false, renderable: true, },
+        { internalformat: rgFmt, format: "RG", destFormat: rgbaFmt, valid: false, renderable: true, },
+        { internalformat: rFmt, format: "RED", destFormat: rFmt, valid: true, renderable: true, },
+        { internalformat: rFmt, format: "RED", destFormat: rgFmt, valid: false, renderable: true, },
+        { internalformat: rFmt, format: "RED", destFormat: rgbFmt, valid: false, renderable: true, },
+        { internalformat: rFmt, format: "RED", destFormat: rgbaFmt, valid: false, renderable: true, },
     ];
     if (!wtu.isWebGL2(gl)) {
         cases = [
@@ -313,33 +365,52 @@ function runCopyTexImageTest(enabled)
             { valid:  true, renderable: false, format: "LUMINANCE_ALPHA", destFormat: "LUMINANCE_ALPHA", },
         ];
     }
+    var copyVerifyProgram = wtu.setupSimpleTextureProgram(gl);
     cases.forEach(function(testcase) {
         debug("");
         debug(`Testing CopyTexImage2D for format: ${testcase.format}, internalformat: ${testcase.internalformat}, destformat: ${testcase.destFormat}`);
 
         var format = gl[testcase.format];
         var internalformat = wtu.isWebGL2(gl) ? gl[testcase.internalformat] : format;
-        var type = wtu.isWebGL2(gl) ? gl.HALF_FLOAT : 0x8D61 /* HALF_FLOAT_OES */;
         var destFormat = gl[testcase.destFormat];
         var texSrc = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, texSrc);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        var data = new Uint16Array(width * height * 4);
-        gl.texImage2D(gl.TEXTURE_2D, level, internalformat, width, height, 0, format, type, data);
+        var data = (texType == gl.FLOAT) ? new Float32Array(width * height * 4) : new Uint16Array(width * height * 4);
+        gl.texImage2D(gl.TEXTURE_2D, level, internalformat, width, height, 0, format, texType, data);
         var fbo = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texSrc, level);
-        var texDest = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, texDest);
+        var texDest = allocateTexture();
         wtu.glErrorShouldBe(gl, gl.NO_ERROR, "Setup framebuffer with texture should succeed.");
         if (enabled && testcase.renderable) {
             if (!wtu.isWebGL2(gl) && format == gl.RGB && gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT) {
                 testPassed("RGB framebuffer attachment not supported. This is allowed.")
             } else {
                 shouldBe("gl.checkFramebufferStatus(gl.FRAMEBUFFER)", "gl.FRAMEBUFFER_COMPLETE");
+                gl.clearColor(copyTestFullColor[0], copyTestFullColor[1], copyTestFullColor[2], copyTestFullColor[3]);
+                gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.copyTexImage2D(gl.TEXTURE_2D, level, destFormat, 0, 0, width, height, 0);
                 wtu.glErrorShouldBe(gl, testcase.valid ? gl.NO_ERROR : [gl.INVALID_ENUM, gl.INVALID_OPERATION], "CopyTexImage2D");
+                if (testcase.valid) {
+                    gl.clearColor(copyTestSubColor[0], copyTestSubColor[1], copyTestSubColor[2], copyTestSubColor[3]);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.copyTexSubImage2D(gl.TEXTURE_2D, level, 0, 0, 0, 0, width / 2, height / 2);
+                    wtu.glErrorShouldBe(gl, gl.NO_ERROR, "CopyTexSubImage2D should succeed.");
+
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    gl.useProgram(copyVerifyProgram);
+                    wtu.clearAndDrawUnitQuad(gl);
+                    wtu.glErrorShouldBe(gl, gl.NO_ERROR, "Drawing copied texture should succeed.");
+
+                    const expectedSub = expectedSampledCopyColor(destFormat, copyTestSubColor);
+                    const expectedFull = expectedSampledCopyColor(destFormat, copyTestFullColor);
+                    wtu.checkCanvasRect(gl, Math.floor(gl.canvas.width / 4), Math.floor(gl.canvas.height / 4), 1, 1,
+                                        expectedSub, "Sub-image copy region should match expected color", 2);
+                    wtu.checkCanvasRect(gl, Math.floor(gl.canvas.width * 3 / 4), Math.floor(gl.canvas.height * 3 / 4), 1, 1,
+                                        expectedFull, "Full-image copy region should match expected color", 2);
+                }
             }
         } else {
             shouldBe("gl.checkFramebufferStatus(gl.FRAMEBUFFER)", "gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT");
@@ -491,6 +562,19 @@ if (!gl) {
           runRGB16FNegativeTest(); // Ensure EXT_color_buffer_half_float does not enable RGB16F as color renderable.
 
       runCopyTexImageTest(true);
+
+      // Also check 32-bit floating-point formats if supported.
+      if (wtu.isWebGL2(gl)) {
+          if (gl.getExtension("EXT_color_buffer_float")) {
+              runCopyTexImageTest(true, gl.FLOAT);
+          }
+      } else {
+          if (gl.getExtension("OES_texture_float") && gl.getExtension("WEBGL_color_buffer_float")) {
+              runFloatTextureRenderTargetTest(true, "gl.RGBA", gl.RGBA, gl.FLOAT, testProgram, 4, [1000, 1000, 1000, 1000], 0);
+              runFloatTextureRenderTargetTest(true, "gl.RGB", gl.RGB, gl.FLOAT, testProgram, 3, [1000, 1000, 1000, 1], 0);
+              runCopyTexImageTest(true, gl.FLOAT);
+          }
+      }
 
       runUniqueObjectTest();
 
